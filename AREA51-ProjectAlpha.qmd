@@ -1,0 +1,171 @@
+---
+title: "Project-651"
+author: "Mrudula Nimmala, Sowmya Sree Kemsaram, Shreyas mali."
+format:
+    html:
+     self-contained: true
+---
+
+## Load the Data and pre-process
+
+```{r}
+
+# Load the dataset
+file_path <- "ufo-sightings-transformed.csv"
+ufo_dataset <- read.csv(file_path)
+
+
+# Overview of the dataset
+head(ufo_dataset)
+summary(ufo_dataset)
+str(ufo_dataset)
+
+
+colSums(ufo_dataset == "" | is.na(ufo_dataset))
+
+# # Remove rows where any column has missing or blank values
+# ufo_dataset <- ufo_dataset[complete.cases(ufo_dataset), ]
+
+
+# Remove rows with missing or blank values
+ufo_dataset <- ufo_dataset[!(apply(ufo_dataset, 1, function(row) any(row == "" | is.na(row)))), ]
+
+
+
+
+library(lubridate)
+
+# Convert Date_time to datetime
+ufo_dataset$Date_time <- ymd_hms(ufo_dataset$Date_time)
+
+# Convert date_documented to date
+ufo_dataset$date_documented <- mdy(ufo_dataset$date_documented)
+
+
+
+# Convert columns to categorical variables (factors)
+ufo_dataset$Season <- as.factor(ufo_dataset$Season)
+ufo_dataset$Country_Code <- as.factor(ufo_dataset$Country_Code)
+ufo_dataset$Country <- as.factor(ufo_dataset$Country)
+ufo_dataset$Region <- as.factor(ufo_dataset$Region)
+ufo_dataset$Locale <- as.factor(ufo_dataset$Locale)
+ufo_dataset$UFO_shape <- as.factor(ufo_dataset$UFO_shape)
+
+```
+
+## Get Area-51 Coordinates. 
+
+```{r}
+library(dplyr)
+library(geosphere)
+
+# Coordinates for Area 51
+area51_coords <- c(-115.808, 37.233)
+
+# Function to calculate distance from Area 51
+calculate_distance <- function(lon, lat) {
+  dist <- distGeo(c(lon, lat), area51_coords) / 1609.34
+  return(dist)
+}
+
+# Add a distance column to the dataset
+data <- ufo_dataset %>%
+  mutate(Distance_to_Area51 = mapply(calculate_distance, longitude, latitude))
+
+# Filter for sightings within 50 miles of Area 51
+area51_sightings <- data %>%
+  filter(Distance_to_Area51 <= 50)
+
+```
+
+
+```{r}
+
+
+# Calculate sightings by year and filter for sightings count greater than 100
+sightings_by_year <- data %>%
+  mutate(Year = as.numeric(format(as.Date(Date_time), "%Y"))) %>%
+  group_by(Year) %>%
+  summarise(Sightings = n()) %>%
+  filter(Sightings > 100)
+
+
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(sightings_by_year, aes(x = Year, y = Sightings)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "UFO Sightings Near Area 51 Over Time", x = "Year", y = "Sightings") +
+  theme_minimal()
+```
+## Predicting the next 10 years UFO sighting using ARIMA
+
+```{r warning=FALSE, message=FALSE}
+library(forecast)
+
+# Convert data to a time series object
+sightings_ts <- ts(sightings_by_year$Sightings, start = min(sightings_by_year$Year), frequency = 1)
+
+# Fit an ARIMA model
+arima_model <- auto.arima(sightings_ts)
+
+# Forecast future sightings (e.g., next 10 years)
+forecast_sightings <- forecast(arima_model, h = 10)
+
+# Plot the forecast
+plot(forecast_sightings, main = "Forecasted UFO Sightings Near Area 51")
+
+```
+
+
+
+```{r warning=FALSE, message=FALSE}
+
+library(randomForest)
+data$Target <- ifelse(data$Distance_to_Area51 <= 50, 1, 0)
+
+set.seed(123) # Ensure reproducibility
+train_index <- createDataPartition(data$Target, p = 0.8, list = FALSE)
+train_data <- data[train_index, ]
+test_data <- data[-train_index, ]
+
+set.seed(123)
+train_data$Target <- as.factor(train_data$Target)
+test_data$Target <- as.factor(test_data$Target)
+
+# Train Random Forest model for classification
+rf_model <- randomForest(Target ~ Year + Month + Hour + Season, data = train_data, ntree = 100, importance = TRUE)
+
+# Model evaluation on test data
+test_predictions <- predict(rf_model, test_data, type = "prob")[, 2]
+test_actual <- as.numeric(as.character(test_data$Target))
+
+# Calculate ROC and AUC
+library(pROC)
+roc_curve <- roc(test_actual, test_predictions)
+auc_value <- auc(roc_curve)
+
+# Plot ROC Curve
+plot(roc_curve, main = "ROC Curve for Random Forest Model", col = "blue", lwd = 2)
+abline(a = 0, b = 1, lty = 2, col = "gray")
+
+# Print AUC
+cat("AUC: ", auc_value, "\n")
+
+# Additional metrics
+test_predictions_binary <- ifelse(test_predictions > 0.5, 1, 0)
+library(caret)
+conf_matrix <- confusionMatrix(as.factor(test_predictions_binary), as.factor(test_actual))
+
+# Print confusion matrix and additional metrics
+print(conf_matrix)
+
+# Feature importance
+importance <- importance(rf_model)
+varImpPlot(rf_model)
+```
+
+

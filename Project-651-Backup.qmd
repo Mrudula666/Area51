@@ -1,0 +1,72 @@
+---
+title: "Project-651"
+author: "Mrudula Nimmala, Sowmya Sree Kemsaram, Shreyas Mali"
+format:
+    html:
+     self-contained: true
+---
+
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(naniar)
+
+# Load the dataset
+file_path <- "ufo-sightings-transformed.csv"
+ufo_data <- read.csv(file_path)
+
+# Check for missing values
+missing_summary <- sapply(ufo_data, function(x) sum(is.na(x)))
+
+# Display missing value summary
+missing_summary <- data.frame(
+  Variable = names(missing_summary),
+  Missing_Count = as.numeric(missing_summary)
+)
+print(missing_summary)
+
+
+# Alternatively, create a bar plot of missing values
+missing_summary <- missing_summary %>% filter(Missing_Count > 0)  # Only variables with missing values
+
+ggplot(missing_summary, aes(x = reorder(Variable, -Missing_Count), y = Missing_Count)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Count of Missing Values by Variable",
+    x = "Variables",
+    y = "Count of Missing Values"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+# Load necessary library
+library(dplyr)
+
+# Load the dataset
+file_path <- "ufo-sightings-transformed.csv"
+ufo_data <- read.csv(file_path)
+
+# Identify duplicate rows
+duplicates <- ufo_data[duplicated(ufo_data), ]
+
+# Count the number of duplicate rows
+num_duplicates <- nrow(duplicates)
+
+# Print the count of duplicate rows
+print(paste("Number of duplicate rows:", num_duplicates))
+
+# Display duplicate rows if any
+if (num_duplicates > 0) {
+  print("Duplicate rows:")
+  print(duplicates)
+} else {
+  print("No duplicate rows found.")
+}
+
+```
+

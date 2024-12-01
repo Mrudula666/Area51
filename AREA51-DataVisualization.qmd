@@ -1,0 +1,380 @@
+---
+title: "UFO Sigthings Near Area51- Visualization"
+author: "Mrudula Nimmala, Sowmya Sree Kemsaram, Shreyas Shivaji Mali"
+format:
+    html:
+     self-contained: true
+---
+
+## Loading the necessary libraries
+
+```{r warning=FALSE, message=FALSE}
+
+library(lubridate)
+library(dplyr)
+library(geosphere)
+library(leaflet)
+library(dbscan)
+library(MASS)
+library(ggplot2)
+library(plotly)
+
+
+```
+
+## Loading the Data set and perform pre-processing of data
+
+```{r}
+
+# Loading the dataset
+file_path <- "ufo-sightings-transformed.csv"
+ufo_dataset <- read.csv(file_path)
+
+
+# Overview of the dataset
+head(ufo_dataset)
+summary(ufo_dataset)
+
+# Checking for missing values
+colSums(ufo_dataset == "" | is.na(ufo_dataset))
+
+# Removing rows with missing or blank values
+ufo_dataset <- ufo_dataset[!(apply(ufo_dataset, 1, function(row) any(row == "" | is.na(row)))), ]
+
+# Converting Date_time to datetime
+ufo_dataset$Date_time <- ymd_hms(ufo_dataset$Date_time)
+
+# Converting date_documented to date
+ufo_dataset$date_documented <- mdy(ufo_dataset$date_documented)
+
+
+
+# Converting columns to categorical variables (factors)
+ufo_dataset$Season <- as.factor(ufo_dataset$Season)
+ufo_dataset$Country_Code <- as.factor(ufo_dataset$Country_Code)
+ufo_dataset$Country <- as.factor(ufo_dataset$Country)
+ufo_dataset$Region <- as.factor(ufo_dataset$Region)
+ufo_dataset$Locale <- as.factor(ufo_dataset$Locale)
+ufo_dataset$UFO_shape <- as.factor(ufo_dataset$UFO_shape)
+
+```
+
+## Get Area-51 Coordinates. 
+
+```{r}
+
+# Coordinates for Area 51
+area51_coords <- c(-115.808, 37.233)
+
+# Function to calculate distance from Area 51
+calculate_distance <- function(lon, lat) {
+  # Converting to miles
+  dist <- distGeo(c(lon, lat), area51_coords) / 1609.34  
+  return(dist)
+}
+
+# Adding a distance column to the dataset
+data <- ufo_dataset %>%
+  mutate(Distance_to_Area51 = mapply(calculate_distance, longitude, latitude))
+
+# Filtering for sightings within 50 miles of Area 51
+area51_sightings <- data %>%
+  filter(Distance_to_Area51 <= 50)
+
+```
+
+## Pointing the UFO sigthings near Area 51
+
+```{r}
+leaflet(data = area51_sightings) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ~longitude,
+    lat = ~latitude,
+    popup = ~paste(
+      "Date and Time:", Date_time, "<br>",
+      "Season:", Season, "<br>",
+      "Region:", Region, "<br>",
+      "Locale:", Locale
+    ),
+    radius = 5,
+    color = "red",
+    fillOpacity = 0.8
+  ) %>%
+  setView(lng = -115.808, lat = 37.233, zoom = 8)
+
+```
+
+
+```{r warning=FALSE}
+library(plotly)
+# Defining Area 51 coordinates
+area51_coords <- data.frame(longitude = -115.808, latitude = 37.233)
+
+# Adjusting the density plot and annotating Area 51
+gg_density <- ggplot(area51_sightings, aes(x = longitude, y = latitude)) +
+  geom_density2d() +
+  stat_density2d(aes(fill = ..level..), geom = "polygon", alpha = 0.4) +
+  geom_point(data = area51_coords, aes(x = longitude, y = latitude), 
+             color = "red", size = 3) +  
+  annotate("text", x = -115.808, y = 37.233, label = "Area 51", 
+           color = "red", size = 5, hjust = 0, vjust = -1) + 
+  labs(title = "Density of UFO Sightings Near Area 51",
+       x = "Longitude", y = "Latitude") +
+  xlim(-116, -115.5) +  
+  ylim(36.5, 37.5) +    
+  theme_minimal()
+
+# Converting to an interactive plot
+interactive_density <- ggplotly(gg_density)
+
+# Displaying the plot
+interactive_density
+
+
+
+```
+
+## Time-series patterns at AREA 51
+
+### Extracting Date and Time From the Dataset
+
+```{r}
+
+area51_sightings$Year <- format(area51_sightings$Date_time, "%Y")
+area51_sightings$Month <- format(area51_sightings$Date_time, "%m")
+area51_sightings$Day <- format(area51_sightings$Date_time, "%d")
+area51_sightings$Hour <- format(area51_sightings$Date_time, "%H")
+
+```
+
+
+### Analysing Sightings by Year
+
+```{r}
+
+# Grouping by year and count sightings
+sightings_by_year <- area51_sightings %>%
+  group_by(Year) %>%
+  summarise(Sightings = n())
+
+# Plotting the trend over years
+ggplot(sightings_by_year, aes(x = as.numeric(Year), y = Sightings)) +
+  geom_line(color = "blue", size = 1) +
+  geom_point(size = 2) +
+  labs(title = "UFO Sightings Near Area 51 Over the Years",
+       x = "Year", y = "Number of Sightings") +
+  theme_minimal()
+
+
+```
+
+### Analyze Sightings by Month
+
+```{r}
+
+# Grouping by month and count sightings
+sightings_by_month <- area51_sightings %>%
+  group_by(Month) %>%
+  summarise(Sightings = n())
+
+# Plotting the trend over months
+ggplot(sightings_by_month, aes(x = Month, y = Sightings)) +
+  geom_bar(stat = "identity", fill = "blue", alpha = 0.7) +
+  labs(title = "UFO Sightings Near Area 51 by Month",
+       x = "Month", y = "Number of Sightings") +
+  theme_minimal()
+
+
+```
+
+### Analyzing Sightings by Hour
+
+```{r warning=FALSE}
+
+# Grouping by hour and count sightings
+sightings_by_hour <- area51_sightings %>%
+  group_by(Hour) %>%
+  summarise(Sightings = n())
+
+# Plotting the trend over hours
+ggplot(sightings_by_hour, aes(x = as.numeric(Hour), y = Sightings)) +
+  geom_bar(stat = "identity", fill = "blue", alpha = 0.7) +
+  labs(title = "UFO Sightings Near Area 51 by Hour",
+       x = "Hour of Day", y = "Number of Sightings") +
+  theme_minimal()
+
+```
+
+### Combining Date and Time Trends
+
+
+```{r warning=FALSE, message=FALSE}
+
+# Grouping by hour and month and count sightings
+sightings_by_time <- area51_sightings %>%
+  group_by(Month, Hour) %>%
+  summarise(Sightings = n())
+
+# Plotting a heatmap
+ggplot(sightings_by_time, aes(x = as.numeric(Month), y = as.numeric(Hour), fill = Sightings)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "blue") +
+  labs(title = "UFO Sightings Near Area 51 by Month and Hour",
+       x = "Month", y = "Hour of Day", fill = "Sightings") +
+  theme_minimal()
+
+```
+### Adding Time Filters to Spatial Data
+
+
+```{r}
+
+# Filtering for July evenings (8 PM–10 PM)
+july_evenings <- area51_sightings %>%
+  filter(Month == "07" & Hour >= 20 & Hour <= 22)
+
+# Plotting heat map for July evenings
+ggplot(july_evenings, aes(x = longitude, y = latitude)) +
+  geom_density2d() +
+  stat_density2d(aes(fill = ..level..), geom = "polygon", alpha = 0.5) +
+  scale_fill_gradient(low = "lightblue", high = "red") +
+  labs(title = "UFO Sightings in July Evenings Near Area 51",
+       x = "Longitude", y = "Latitude") +
+  theme_minimal()
+
+```
+```{r}
+
+coordinates <- data.frame(
+  longitude = july_evenings$longitude,
+  latitude = july_evenings$latitude,
+  Region = july_evenings$Region,
+  Locale = july_evenings$Locale
+)
+
+# Computing density
+density_estimation <- kde2d(coordinates$longitude, coordinates$latitude, n = 100)
+
+# Converting density grid into a data frame
+density_data <- as.data.frame(expand.grid(
+  longitude = density_estimation$x,
+  latitude = density_estimation$y
+))
+
+# Adding density levels
+density_data$density <- as.vector(density_estimation$z)
+
+# Step 1: Filter for high-density regions (top 5% density values)
+high_density_points <- density_data %>%
+  filter(density >= quantile(density, 0.95))
+
+# Step 2: Removing duplicates for latitude and longitude
+high_density_unique <- high_density_points %>%
+  distinct(longitude, latitude, .keep_all = TRUE)
+
+
+```
+
+### Ploting UFO Sightings Near Area 51 During July-Evenings
+
+```{r}
+
+# Perform clustering on latitude and longitude
+coordinates <- july_evenings[, c("longitude", "latitude")]
+dbscan_result <- dbscan(coordinates, eps = 0.01, minPts = 5)
+
+# Add cluster labels to data
+july_evenings$Cluster <- factor(dbscan_result$cluster)
+
+# Plot clusters
+ggplot(july_evenings, aes(x = longitude, y = latitude, color = Cluster)) +
+  geom_point(size = 2, alpha = 0.8) +
+  labs(title = "UFO Sightings Clusters Near Area 51 During July-eveings.",
+       x = "Longitude", y = "Latitude", color = "Cluster") +
+  theme_minimal()
+```
+### UFO Sightings Clusters with Connections Near Area 51 During July-Evenings
+
+```{r warning=FALSE, message=FALSE}
+
+# Connect points by cluster (lines)
+july_evenings_cluster_lines <- plot_ly(
+  data = july_evenings,
+  x = ~longitude,
+  y = ~latitude,
+  color = ~Cluster,
+  type = 'scatter',
+  mode = 'markers+lines',  # Add lines between points
+  marker = list(size = 10, opacity = 0.8),
+  text = ~paste(
+    "Cluster:", Cluster, "<br>",
+    "Longitude:", longitude, "<br>",
+    "Latitude:", latitude, "<br>",
+    "Locale:", Locale
+  )
+) %>%
+  layout(
+    title = "UFO Sightings Clusters with Connections Near Area 51 During July-Eveings",
+    xaxis = list(title = "Longitude"),
+    yaxis = list(title = "Latitude"),
+    hovermode = "closest"
+  )
+
+# Display the interactive plot
+july_evenings_cluster_lines
+```
+
+## Performing Clustering at UFO Sightings Near Area 51
+
+```{r}
+
+# Performing clustering on latitude and longitude
+coordinates <- area51_sightings[, c("longitude", "latitude")]
+dbscan_result <- dbscan(coordinates, eps = 0.01, minPts = 5)
+
+# Adding cluster labels to data
+area51_sightings$Cluster <- factor(dbscan_result$cluster)
+
+# Plotting clusters
+ggplot(area51_sightings, aes(x = longitude, y = latitude, color = Cluster)) +
+  geom_point(size = 2, alpha = 0.8) +
+  labs(title = "UFO Sightings Clusters Near Area 51",
+       x = "Longitude", y = "Latitude", color = "Cluster") +
+  theme_minimal()
+
+
+```
+## UFO Sightings Clusters with Connections Near Area 51 
+
+```{r warning=FALSE, message=FALSE}
+
+
+# Connecting points by cluster (lines)
+plotly_cluster_lines <- plot_ly(
+  data = area51_sightings,
+  x = ~longitude,
+  y = ~latitude,
+  color = ~Cluster,
+  type = 'scatter',
+  mode = 'markers+lines',  
+  marker = list(size = 10, opacity = 0.8),
+  text = ~paste(
+    "Cluster:", Cluster, "<br>",
+    "Longitude:", longitude, "<br>",
+    "Latitude:", latitude
+  )
+) %>%
+  layout(
+    title = "UFO Sightings Clusters with Connections Near Area 51",
+    xaxis = list(title = "Longitude"),
+    yaxis = list(title = "Latitude"),
+    hovermode = "closest"
+  )
+
+# Displaying the interactive plot
+plotly_cluster_lines
+
+
+```
+

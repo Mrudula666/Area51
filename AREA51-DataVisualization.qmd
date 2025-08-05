@@ -18,6 +18,7 @@ library(dbscan)
 library(MASS)
 library(ggplot2)
 library(plotly)
+library(gridExtra)
 
 
 ```
@@ -74,12 +75,72 @@ calculate_distance <- function(lon, lat) {
 }
 
 # Adding a distance column to the dataset
-data <- ufo_dataset %>%
+ufo_dataset <- ufo_dataset %>%
   mutate(Distance_to_Area51 = mapply(calculate_distance, longitude, latitude))
 
-# Filtering for sightings within 50 miles of Area 51
-area51_sightings <- data %>%
+# Keeping a subset for local Area 51 analysis if needed
+area51_sightings <- ufo_dataset %>%
   filter(Distance_to_Area51 <= 50)
+
+```
+
+## Global Clustering and Hotspot Comparison
+
+```{r}
+
+# Perform clustering on all sightings
+global_coords <- ufo_dataset[, c("longitude", "latitude")]
+cluster_result <- dbscan(global_coords, eps = 1, minPts = 20)
+ufo_dataset$Cluster <- cluster_result$cluster
+
+# Identify the cluster corresponding to Area 51
+area51_cluster_label <- ufo_dataset %>%
+  filter(Distance_to_Area51 <= 50) %>%
+  count(Cluster, sort = TRUE) %>%
+  slice(1) %>%
+  pull(Cluster)
+
+area51_cluster <- ufo_dataset %>%
+  filter(Cluster == area51_cluster_label)
+
+# Find the densest cluster outside of Area 51
+other_clusters <- ufo_dataset %>%
+  filter(Cluster != area51_cluster_label, Cluster != 0)
+densest_cluster_label <- other_clusters %>%
+  count(Cluster, sort = TRUE) %>%
+  slice(1) %>%
+  pull(Cluster)
+
+densest_cluster <- ufo_dataset %>%
+  filter(Cluster == densest_cluster_label)
+
+# Side-by-side visualisations
+p_area51 <- ggplot(area51_cluster, aes(x = longitude, y = latitude)) +
+  geom_point(color = "red", alpha = 0.6) +
+  labs(title = paste("Area 51 Cluster (n=", nrow(area51_cluster), ")", sep=""),
+       x = "Longitude", y = "Latitude") +
+  theme_minimal()
+
+p_hotspot <- ggplot(densest_cluster, aes(x = longitude, y = latitude)) +
+  geom_point(color = "blue", alpha = 0.6) +
+  labs(title = paste("Densest Hotspot (n=", nrow(densest_cluster), ")", sep=""),
+       x = "Longitude", y = "Latitude") +
+  theme_minimal()
+
+grid.arrange(p_area51, p_hotspot, ncol = 2)
+
+# Summary comparison
+area51_summary <- area51_cluster %>%
+  summarise(Count = n(),
+            Mean_Longitude = mean(longitude),
+            Mean_Latitude = mean(latitude))
+
+densest_summary <- densest_cluster %>%
+  summarise(Count = n(),
+            Mean_Longitude = mean(longitude),
+            Mean_Latitude = mean(latitude))
+
+grid.arrange(tableGrob(area51_summary), tableGrob(densest_summary), ncol = 2)
 
 ```
 
